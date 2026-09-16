@@ -1,0 +1,368 @@
+Option Explicit
+' Merge declarations into the top of the target UserForm code module.
+Private pMRObserver As Object
+Private pMRToken As String
+
+Private Sub cmdClose_Click()
+    
+    Unload Me
+    
+End Sub
+
+Private Sub cmdProcess_Click()
+
+    Dim targets As New Collection
+    Dim sr As ShapeRange
+    Dim s As Shape
+    Dim i As Long
+    Dim dashCreated As Long
+    Dim processed As Long
+    Dim commandStarted As Boolean
+
+    If Documents.Count = 0 Then
+        MsgBox "Tidak ada document aktif.", vbExclamation
+        Exit Sub
+    End If
+
+    Set sr = ActiveSelectionRange
+
+    If sr.Count = 0 Then
+        MsgBox "Pilih dashed curve terlebih dahulu.", vbExclamation
+        Exit Sub
+    End If
+
+    ' Simpan reference object terlebih dahulu karena selection
+    ' akan berubah saat BreakApart dijalankan.
+    For Each s In sr.Shapes
+        targets.Add s
+    Next s
+
+    On Error GoTo ErrHandler
+
+    ActiveDocument.BeginCommandGroup "Explode Dashed Curve"
+    commandStarted = True
+
+    Application.Optimization = True
+
+    For i = 1 To targets.Count
+
+        Set s = targets.Item(i)
+
+        dashCreated = ExplodeDashedShape(s)
+
+        If dashCreated > 0 Then
+            processed = processed + 1
+        End If
+
+    Next i
+
+SafeExit:
+
+    Application.Optimization = False
+    ActiveWindow.Refresh
+
+    If commandStarted Then
+        ActiveDocument.EndCommandGroup
+    End If
+
+    If processed = 0 Then
+        MsgBox "Tidak ada dashed curve yang dapat diproses.", vbInformation
+    End If
+
+    Exit Sub
+
+
+ErrHandler:
+
+    Application.Optimization = False
+
+    If commandStarted Then
+        ActiveDocument.EndCommandGroup
+    End If
+
+    ActiveWindow.Refresh
+
+    MsgBox "Explode Dash gagal." & vbCrLf & vbCrLf & _
+           "Error " & Err.Number & ": " & Err.Description, _
+           vbCritical
+
+End Sub
+
+
+Private Function ExplodeDashedShape(ByVal s As Shape) As Long
+
+    Dim sp As SubPath
+    Dim os As OutlineStyle
+
+    Dim dashLen() As Double
+    Dim gapLen() As Double
+    Dim boundaries() As Double
+
+    Dim dashCount As Long
+    Dim boundaryCount As Long
+    Dim pairIndex As Long
+    Dim i As Long
+
+    Dim pathLength As Double
+    Dim patternUnits As Double
+    Dim patternScale As Double
+    Dim pos As Double
+    Dim eps As Double
+
+    On Error GoTo SkipShape
+
+    ' =========================================================
+    ' 1. Pastikan object merupakan curve
+    ' =========================================================
+
+    If s.Type <> cdrCurveShape Then
+        s.ConvertToCurves
+    End If
+
+    If s.Type <> cdrCurveShape Then GoTo SkipShape
+
+    ' Versi emergency ini memproses satu continuous path
+    ' per Shape.
+    If s.Curve.SubPaths.Count <> 1 Then GoTo SkipShape
+
+    If s.Outline.Type = cdrNoOutline Then GoTo SkipShape
+
+    Set os = s.Outline.Style
+
+    dashCount = os.dashCount
+
+    ' DashCount = 0 berarti solid line
+    If dashCount <= 0 Then GoTo SkipShape
+
+    ReDim dashLen(1 To dashCount)
+    ReDim gapLen(1 To dashCount)
+
+    ' =========================================================
+    ' 2. Hitung total pattern
+    '
+    ' DashLength dan GapLength merupakan multiplier
+    ' terhadap Outline.Width.
+    ' =========================================================
+
+    patternUnits = 0
+
+    For i = 1 To dashCount
+
+        patternUnits = patternUnits + os.DashLength(i)
+        patternUnits = patternUnits + os.GapLength(i)
+
+    Next i
+
+    If patternUnits <= 0 Then GoTo SkipShape
+
+    ' Normal Corel dash:
+    ' actual length = multiplier * Outline.Width
+    '
+    ' Jika DashDotLength dipakai, nilai tersebut menjadi
+    ' panjang absolut satu siklus pattern.
+    If s.Outline.DashDotLength > 0 Then
+
+        patternScale = _
+            s.Outline.DashDotLength / patternUnits
+
+    Else
+
+        patternScale = s.Outline.Width
+
+    End If
+
+    If patternScale <= 0 Then GoTo SkipShape
+
+    For i = 1 To dashCount
+
+        dashLen(i) = _
+            os.DashLength(i) * patternScale
+
+        gapLen(i) = _
+            os.GapLength(i) * patternScale
+
+    Next i
+
+    ' =========================================================
+    ' 3. Ambil original SubPath
+    ' =========================================================
+
+    Set sp = s.Curve.SubPaths(1)
+
+    pathLength = sp.Length
+
+    If pathLength <= 0 Then GoTo SkipShape
+
+    eps = pathLength * 0.0000001
+
+    If eps < 0.0000001 Then
+        eps = 0.0000001
+    End If
+
+    ' =========================================================
+    ' 4. Jika closed path (circle, closed Bézier, dll),
+    '    buka dulu di StartNode TANPA membuang segment.
+    '
+    '    Geometrinya tetap sama, hanya seam-nya dibuka.
+    ' =========================================================
+
+    If sp.Closed Then
+        sp.StartNode.BreakApart
+        Set sp = s.Curve.SubPaths(1)
+    End If
+
+    ' =========================================================
+    ' 5. Bangun daftar posisi:
+    '
+    '    DASH | GAP | DASH | GAP ...
+    '
+    '    Boundary disimpan berdasarkan actual distance
+    '    sepanjang SubPath.
+    ' =========================================================
+
+    pos = 0
+    pairIndex = 1
+
+    Do While pos < pathLength - eps
+
+        ' -------------------------
+        ' Akhir DASH
+        ' -------------------------
+        pos = pos + dashLen(pairIndex)
+
+        If pos < pathLength - eps Then
+
+            boundaryCount = boundaryCount + 1
+            ReDim Preserve boundaries(1 To boundaryCount)
+
+            boundaries(boundaryCount) = pos
+
+        Else
+
+            Exit Do
+
+        End If
+
+        ' -------------------------
+        ' Akhir GAP
+        ' -------------------------
+        pos = pos + gapLen(pairIndex)
+
+        If pos < pathLength - eps Then
+
+            boundaryCount = boundaryCount + 1
+            ReDim Preserve boundaries(1 To boundaryCount)
+
+            boundaries(boundaryCount) = pos
+
+        Else
+
+            Exit Do
+
+        End If
+
+        pairIndex = pairIndex + 1
+
+        If pairIndex > dashCount Then
+            pairIndex = 1
+        End If
+
+    Loop
+
+    If boundaryCount = 0 Then
+
+        ' Path lebih pendek daripada dash pertama.
+        ' Jadikan solid curve saja.
+        s.Outline.Style = OutlineStyles.Item(0)
+
+        ExplodeDashedShape = 1
+        Exit Function
+
+    End If
+
+    ' =========================================================
+    ' 6. Break dari BELAKANG ke DEPAN.
+    '
+    '    Ini penting agar absolute offset sebelumnya tidak
+    '    berubah setelah path dipotong.
+    ' =========================================================
+
+    For i = boundaryCount To 1 Step -1
+
+        Set sp = s.Curve.SubPaths(1)
+
+        sp.BreakApartAt _
+            boundaries(i), _
+            cdrAbsoluteSegmentOffset
+
+    Next i
+
+    ' =========================================================
+    ' 7. Setelah dipotong:
+    '
+    '    SubPath 1 = DASH
+    '    SubPath 2 = GAP
+    '    SubPath 3 = DASH
+    '    SubPath 4 = GAP
+    '    ...
+    '
+    '    Hapus semua GAP dari belakang.
+    ' =========================================================
+
+    For i = s.Curve.SubPaths.Count To 2 Step -1
+
+        If (i Mod 2) = 0 Then
+            s.Curve.SubPaths(i).Delete
+        End If
+
+    Next i
+
+    ' =========================================================
+    ' 8. Geometri sekarang sudah benar-benar dashed.
+    '
+    '    Outline visual harus diubah menjadi SOLID,
+    '    supaya setiap potongan tidak dashed lagi.
+    '
+    '    Item(0) selalu solid outline.
+    ' =========================================================
+
+    s.Outline.Style = OutlineStyles.Item(0)
+
+    ExplodeDashedShape = s.Curve.SubPaths.Count
+
+    Exit Function
+
+
+SkipShape:
+
+    ExplodeDashedShape = 0
+
+End Function
+
+Private Sub UserForm_Click()
+
+End Sub
+
+' Called only by MRTargetBridge; normal menu entry points remain unchanged.
+Public Sub MRBindRunner(ByVal observer As Object, ByVal token As String)
+    Set pMRObserver = observer
+    pMRToken = token
+End Sub
+
+Public Sub MRDetachRunner()
+    Set pMRObserver = Nothing
+    pMRToken = vbNullString
+End Sub
+
+Private Sub UserForm_Terminate()
+    Dim observer As Object, token As String
+    On Error GoTo NotifyFailed
+    Set observer = pMRObserver
+    token = pMRToken
+    MRDetachRunner
+    If Not observer Is Nothing Then CallByName observer, "MacroUnloaded", VbMethod, token
+    Exit Sub
+NotifyFailed:
+    MsgBox "Gagal memberitahu Macro Runner bahwa form sudah ditutup (" & CStr(Err.Number) & "): " & _
+        Err.Description, vbExclamation, "Macro Runner"
+End Sub
