@@ -1,0 +1,3 @@
+2026-09-15
+[DashLineBreaker - implementasi awal]
++ Implementasi saat ini memproses satu `SubPath` per shape dan mengeksekusi ExplodeDash pada shape terpilih.
