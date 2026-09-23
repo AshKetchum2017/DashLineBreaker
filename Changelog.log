@@ -1,3 +1,14 @@
+------------------------------------------------------------------------------------------------------------------------------------------------------
 2026-09-15
 [DashLineBreaker - implementasi awal]
-+ Implementasi saat ini memproses satu `SubPath` per shape dan mengeksekusi ExplodeDash pada shape terpilih.
++ Menambahkan ExplodeDash untuk memecah garis putus-putus pada shape terpilih.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-09-23
+[DashLineBreaker - otomatisasi dash dan arah path]
++ Macro kini menerapkan pola dash secara otomatis sebelum proses explode.
++ Menambahkan `cmdExplode` untuk menjalankan explode pada dash line yang sudah ada tanpa menerapkan pola baru.
++ Menambahkan pilihan arah Clockwise dan Counter-Clockwise melalui OptionButton.
+~ Start point awal dipertahankan saat arah path perlu dibalik.
+~ Atribut outline, termasuk warna, tetap dipertahankan setelah hasil dash dibuat solid.
+~ Urutan SubPath hasil explode kini dibalik agar dash pada awal start point berada di posisi paling belakang.

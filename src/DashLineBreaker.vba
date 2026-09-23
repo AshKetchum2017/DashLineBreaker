@@ -341,6 +341,8 @@ Private Function ExplodeDashedShape( _
         End If
     Next i
 
+    ReverseSubPathOrderForBreakApart s
+
     ApplySolidOutline _
         s, _
         outlineWidth, _
@@ -526,6 +528,29 @@ Private Sub UserForm_Terminate()
 NotifyFailed:
     MsgBox "Gagal memberitahu Macro Runner bahwa form sudah ditutup (" & CStr(Err.Number) & "): " & _
         Err.Description, vbExclamation, "Macro Runner"
+End Sub
+
+Private Sub ReverseSubPathOrderForBreakApart(ByVal s As Shape)
+
+    Dim sourceCurve As Curve
+    Dim rebuiltCurve As Curve
+    Dim subCurve As Curve
+    Dim i As Long
+    Dim subpathCount As Long
+
+    If s.Type <> cdrCurveShape Then Exit Sub
+    subpathCount = s.Curve.SubPaths.Count
+    If subpathCount <= 1 Then Exit Sub
+
+    Set sourceCurve = s.Curve.GetCopy
+    Set rebuiltCurve = CreateCurve(ActiveDocument)
+    For i = subpathCount To 1 Step -1
+        Set subCurve = sourceCurve.SubPaths(i).GetCopy
+        rebuiltCurve.AppendCurve subCurve
+    Next i
+
+    s.Curve.CopyAssign rebuiltCurve
+
 End Sub
 
 Private Sub AppendBoundary( _
