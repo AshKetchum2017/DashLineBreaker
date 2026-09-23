@@ -54,7 +54,7 @@ Private Sub RunDLB(ByVal mode As DLBMode)
     Dim commandStarted As Boolean
     Dim targetClockwise As Boolean
     Dim previousOptimization As Boolean
-    Dim Failed As Boolean
+    Dim processFailed As Boolean
     Dim errorNumber As Long
     Dim errorDescription As String
 
@@ -113,7 +113,7 @@ CleanExit:
 
     On Error GoTo 0
 
-    If Failed Then
+    If processFailed Then
         MsgBox "Dash Line Breaker gagal." & vbCrLf & vbCrLf & _
                "Error " & errorNumber & ": " & errorDescription, _
                vbCritical
@@ -131,7 +131,7 @@ CleanExit:
     Exit Sub
 
 ErrHandler:
-    Failed = True
+    processFailed = True
     errorNumber = Err.Number
     errorDescription = Err.Description
 
