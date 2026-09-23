@@ -4,10 +4,10 @@ Private pMRObserver As Object
 Private pMRToken As String
 
 Private Const DLB_DASH_COUNT As Long = 1
-Private Const DLB_DASH_LENGTH_1 As Double = 55#
-Private Const DLB_GAP_LENGTH_1 As Double = 5#
+Private Const DLB_DASH_LENGTH_1 As Double = 143#
+Private Const DLB_GAP_LENGTH_1 As Double = 18#
 Private Const DLB_DASH_DOT_LENGTH As Double = 0#
-Private Const DLB_DEFAULT_OUTLINE_WIDTH As Double = 0.2#
+Private Const DLB_DEFAULT_OUTLINE_WIDTH As Double = 0.2
 
 Private Enum DLBMode
     dlbGeneratePattern = 0
@@ -15,16 +15,16 @@ Private Enum DLBMode
 End Enum
 
 Private Sub optClockwise_Click()
-    If optClockwise.Value Then optCounterClockwise.Value = False
+    If optClockwise.value Then optCounterClockwise.value = False
 End Sub
 
 Private Sub optCounterClockwise_Click()
-    If optCounterClockwise.Value Then optClockwise.Value = False
+    If optCounterClockwise.value Then optClockwise.value = False
 End Sub
 
 Private Sub UserForm_Initialize()
-    If Not optClockwise.Value And Not optCounterClockwise.Value Then
-        optClockwise.Value = True
+    If Not optClockwise.value And Not optCounterClockwise.value Then
+        optClockwise.value = True
     End If
 End Sub
 
@@ -34,6 +34,8 @@ End Sub
 
 Private Sub cmdProcess_Click()
     RunDLB dlbGeneratePattern
+    
+    Unload Me
 End Sub
 
 Private Sub cmdExplode_Click()
@@ -52,7 +54,7 @@ Private Sub RunDLB(ByVal mode As DLBMode)
     Dim commandStarted As Boolean
     Dim targetClockwise As Boolean
     Dim previousOptimization As Boolean
-    Dim failed As Boolean
+    Dim Failed As Boolean
     Dim errorNumber As Long
     Dim errorDescription As String
 
@@ -71,12 +73,12 @@ Private Sub RunDLB(ByVal mode As DLBMode)
         Exit Sub
     End If
 
-    If Not optClockwise.Value And Not optCounterClockwise.Value Then
+    If Not optClockwise.value And Not optCounterClockwise.value Then
         MsgBox "Pilih arah path terlebih dahulu.", vbExclamation
         Exit Sub
     End If
 
-    targetClockwise = optClockwise.Value
+    targetClockwise = optClockwise.value
 
     ' Selection dapat berubah selama proses.
     For Each s In sr.Shapes
@@ -111,7 +113,7 @@ CleanExit:
 
     On Error GoTo 0
 
-    If failed Then
+    If Failed Then
         MsgBox "Dash Line Breaker gagal." & vbCrLf & vbCrLf & _
                "Error " & errorNumber & ": " & errorDescription, _
                vbCritical
@@ -129,7 +131,7 @@ CleanExit:
     Exit Sub
 
 ErrHandler:
-    failed = True
+    Failed = True
     errorNumber = Err.Number
     errorDescription = Err.Description
 
@@ -214,7 +216,7 @@ Private Function ExplodeDashedShape( _
 
     Set os = s.Outline.Style
 
-    dashCount = os.DashCount
+    dashCount = os.dashCount
 
     If dashCount <= 0 Then GoTo SkipShape
 
@@ -228,7 +230,7 @@ Private Function ExplodeDashedShape( _
 
     If patternUnits <= 0 Then GoTo SkipShape
 
-    dashDotLength = s.Outline.DashDotLength
+    dashDotLength = s.Outline.dashDotLength
     If dashDotLength > 0 Then
         patternScale = dashDotLength / patternUnits
     Else
@@ -393,7 +395,7 @@ Private Function ApplyDashPattern(ByVal s As Shape) As Boolean
         dotLengthText & """}}"
 
     ApplyDashPattern = _
-        (s.Outline.Style.DashCount = DLB_DASH_COUNT)
+        (s.Outline.Style.dashCount = DLB_DASH_COUNT)
 
     Exit Function
 
