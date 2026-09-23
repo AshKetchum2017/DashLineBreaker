@@ -7,6 +7,7 @@ Private Const DLB_DASH_COUNT As Long = 1
 Private Const DLB_DASH_LENGTH_1 As Double = 55#
 Private Const DLB_GAP_LENGTH_1 As Double = 5#
 Private Const DLB_DASH_DOT_LENGTH As Double = 0#
+Private Const DLB_DEFAULT_OUTLINE_WIDTH As Double = 0.2#
 
 Private Sub optClockwise_Click()
     If optClockwise.Value Then optCounterClockwise.Value = False
@@ -133,9 +134,8 @@ Private Function ExplodeDashedShape(ByVal s As Shape, ByVal targetClockwise As B
     ' Versi emergency ini memproses satu continuous path
     ' per Shape.
     If s.Curve.SubPaths.Count <> 1 Then GoTo SkipShape
-    If s.Outline.Type = cdrNoOutline Then GoTo SkipShape
-
-    ApplyDashPattern s
+    EnsureOutline s
+    If Not ApplyDashPattern(s) Then GoTo SkipShape
 
     Set os = s.Outline.Style
     
@@ -153,9 +153,8 @@ Private Function ExplodeDashedShape(ByVal s As Shape, ByVal targetClockwise As B
 
     If patternUnits <= 0 Then GoTo SkipShape
 
-    If s.Outline.DashDotLength > 0 Then
-        patternScale = _
-            s.Outline.DashDotLength / patternUnits
+    If DLB_DASH_DOT_LENGTH > 0 Then
+        patternScale = DLB_DASH_DOT_LENGTH / patternUnits
     Else
         patternScale = s.Outline.Width
     End If
@@ -255,14 +254,26 @@ SkipShape:
     ExplodeDashedShape = 0
 End Function
 
-Private Sub ApplyDashPattern(ByVal s As Shape)
-    With s.Outline.Style
-        .DashCount = DLB_DASH_COUNT
-        .DashLength(1) = DLB_DASH_LENGTH_1
-        .GapLength(1) = DLB_GAP_LENGTH_1
-    End With
-    s.Outline.DashDotLength = DLB_DASH_DOT_LENGTH
+Private Sub EnsureOutline(ByVal s As Shape)
+    Dim outlineRange As New ShapeRange
+
+    If s.Outline.Type <> cdrNoOutline Then Exit Sub
+
+    outlineRange.Add s
+    outlineRange.SetOutlineProperties Width:=DLB_DEFAULT_OUTLINE_WIDTH
 End Sub
+
+Private Function ApplyDashPattern(ByVal s As Shape) As Boolean
+    On Error GoTo Failed
+    s.Style.StringAssign "{""outline"":{""dashDotSpec"":""2," & _
+                         CStr(DLB_DASH_LENGTH_1) & "," & _
+                         CStr(DLB_GAP_LENGTH_1) & """,""dotLength"":""" & _
+                         CStr(DLB_DASH_DOT_LENGTH) & """}}"
+    ApplyDashPattern = (s.Outline.Style.DashCount = DLB_DASH_COUNT)
+    Exit Function
+Failed:
+    ApplyDashPattern = False
+End Function
 
 Private Sub CaptureOutlineProperties(ByVal s As Shape, ByRef outlineWidth As Double, _
                                      ByRef outlineMiterLimit As Double, _
