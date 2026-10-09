@@ -12,3 +12,10 @@
 ~ Start point awal dipertahankan saat arah path perlu dibalik.
 ~ Atribut outline, termasuk warna, tetap dipertahankan setelah hasil dash dibuat solid.
 ~ Urutan SubPath hasil explode kini dibalik agar dash pada awal start point berada di posisi paling belakang.
+
+------------------------------------------------------------------------------------------------------------------------------------------------------
+2026-10-09
+[DashLineBreaker - dukungan multi-subpath]
++ Process dan Explode Existing kini mendukung curve multi-subpath dengan hasil tetap satu shape.
++ Pola dash dimulai ulang pada start point setiap subpath; urutan antar-path asal dipertahankan dan dash terdekat dari start point berada paling bawah dalam path asalnya.
+Catatan: Pada sampel pengguna, Redo Break Apart manual membalik urutan antar-path; Undo lalu Break Apart sebagai perintah baru tetap menghasilkan urutan yang benar.
