@@ -94,6 +94,7 @@ Private Sub RunDLB(ByVal mode As DLBMode)
         Set s = targets.Item(i)
         dashCreated = ExplodeDashedShape( _
             s, _
+            doc, _
             targetClockwise, _
             mode)
 
@@ -140,14 +141,16 @@ End Sub
 
 Private Function ExplodeDashedShape( _
     ByVal s As Shape, _
+    ByVal doc As Document, _
     ByVal targetClockwise As Boolean, _
     ByVal mode As DLBMode) As Long
 
-    Dim sp As SubPath
+    Dim sourceCurve As Curve
+    Dim pathCurve As Curve
+    Dim rebuiltCurve As Curve
+    Dim dashCurve As Curve
+    Dim subpathIndex As Long
     Dim os As OutlineStyle
-    Dim startX As Double
-    Dim startY As Double
-    Dim directionReversed As Boolean
     Dim outlineWidth As Double
     Dim outlineMiterLimit As Double
     Dim outlineLineCaps As Long
@@ -158,17 +161,10 @@ Private Function ExplodeDashedShape( _
     Dim outlineColor As New Color
     Dim dashLen() As Double
     Dim gapLen() As Double
-    Dim boundaries() As Double
     Dim dashCount As Long
-    Dim boundaryCount As Long
-    Dim boundaryCapacity As Long
-    Dim pairIndex As Long
     Dim i As Long
-    Dim pathLength As Double
     Dim patternUnits As Double
     Dim patternScale As Double
-    Dim pos As Double
-    Dim eps As Double
     Dim dashDotLength As Double
 
     On Error GoTo SkipShape
@@ -178,7 +174,7 @@ Private Function ExplodeDashedShape( _
     End If
 
     If s.Type <> cdrCurveShape Then GoTo SkipShape
-    If s.Curve.SubPaths.Count <> 1 Then GoTo SkipShape
+    If s.Curve.SubPaths.Count = 0 Then GoTo SkipShape
 
     Select Case mode
 
@@ -246,7 +242,68 @@ Private Function ExplodeDashedShape( _
             os.GapLength(i) * patternScale
     Next i
 
-    Set sp = s.Curve.SubPaths(1)
+    Set sourceCurve = s.Curve.GetCopy
+    sourceCurve.BindToDocument doc
+    Set rebuiltCurve = CreateCurve(doc)
+
+    ' Pertahankan urutan antar-subpath asal; pola dimulai ulang per path.
+    For subpathIndex = 1 To sourceCurve.SubPaths.Count
+        Set pathCurve = sourceCurve.SubPaths(subpathIndex).GetCopy
+        pathCurve.BindToDocument doc
+
+        If ExplodeDashedSubPath( _
+            pathCurve, targetClockwise, dashLen, gapLen, dashCount) = 0 Then
+            GoTo SkipShape
+        End If
+
+        ' Balik hanya dash milik path ini: dash dekat start point paling bawah.
+        For i = pathCurve.SubPaths.Count To 1 Step -1
+            Set dashCurve = pathCurve.SubPaths(i).GetCopy
+            rebuiltCurve.AppendCurve dashCurve
+        Next i
+    Next subpathIndex
+
+    ' Geometri sumber diganti hanya setelah seluruh subpath berhasil disiapkan.
+    s.Curve.CopyAssign rebuiltCurve
+
+    ApplySolidOutline _
+        s, _
+        outlineWidth, _
+        outlineMiterLimit, _
+        outlineLineCaps, _
+        outlineLineJoin, _
+        outlineJustification, _
+        outlineBehindFill, _
+        outlineScaleWithShape, _
+        outlineColor
+
+    ExplodeDashedShape = s.Curve.SubPaths.Count
+    Exit Function
+
+SkipShape:
+    ExplodeDashedShape = 0
+End Function
+
+Private Function ExplodeDashedSubPath( _
+    ByVal crv As Curve, _
+    ByVal targetClockwise As Boolean, _
+    ByRef dashLen() As Double, _
+    ByRef gapLen() As Double, _
+    ByVal dashCount As Long) As Long
+
+    Dim sp As SubPath
+    Dim startX As Double
+    Dim startY As Double
+    Dim boundaries() As Double
+    Dim boundaryCount As Long
+    Dim boundaryCapacity As Long
+    Dim pairIndex As Long
+    Dim i As Long
+    Dim pathLength As Double
+    Dim pos As Double
+    Dim eps As Double
+
+    Set sp = crv.SubPaths(1)
 
     startX = sp.StartNode.PositionX
     startY = sp.StartNode.PositionY
@@ -254,24 +311,19 @@ Private Function ExplodeDashedShape( _
 
         If sp.IsClockwise <> targetClockwise Then
             sp.ReverseDirection
-            directionReversed = True
-            Set sp = s.Curve.SubPaths(1)
-        End If
-
-        If directionReversed Then
             RestoreStartNode _
-                s.Curve, _
+                crv, _
                 1, _
                 startX, _
                 startY
 
-            Set sp = s.Curve.SubPaths(1)
+            Set sp = crv.SubPaths(1)
         End If
 
     End If
 
     pathLength = sp.Length
-    If pathLength <= 0 Then GoTo SkipShape
+    If pathLength <= 0 Then Exit Function
 
     eps = pathLength * 0.0000001
     If eps < 0.0000001 Then
@@ -311,58 +363,29 @@ Private Function ExplodeDashedShape( _
     Loop
 
     If boundaryCount = 0 Then
-        ApplySolidOutline _
-            s, _
-            outlineWidth, _
-            outlineMiterLimit, _
-            outlineLineCaps, _
-            outlineLineJoin, _
-            outlineJustification, _
-            outlineBehindFill, _
-            outlineScaleWithShape, _
-            outlineColor
-        ExplodeDashedShape = 1
+        ExplodeDashedSubPath = 1
         Exit Function
     End If
 
     If sp.Closed Then
         sp.StartNode.BreakApart
-        Set sp = s.Curve.SubPaths(1)
+        Set sp = crv.SubPaths(1)
     End If
 
     For i = boundaryCount To 1 Step -1
-        Set sp = s.Curve.SubPaths(1)
+        Set sp = crv.SubPaths(1)
         sp.BreakApartAt _
             boundaries(i), _
             cdrAbsoluteSegmentOffset
     Next i
 
-    For i = s.Curve.SubPaths.Count To 2 Step -1
+    For i = crv.SubPaths.Count To 2 Step -1
         If (i Mod 2) = 0 Then
-            s.Curve.SubPaths(i).Delete
+            crv.SubPaths(i).Delete
         End If
     Next i
 
-    ReverseSubPathOrderForBreakApart s
-
-    ApplySolidOutline _
-        s, _
-        outlineWidth, _
-        outlineMiterLimit, _
-        outlineLineCaps, _
-        outlineLineJoin, _
-        outlineJustification, _
-        outlineBehindFill, _
-        outlineScaleWithShape, _
-        outlineColor
-
-    ExplodeDashedShape = s.Curve.SubPaths.Count
-
-    Exit Function
-
-SkipShape:
-    ExplodeDashedShape = 0
-
+    ExplodeDashedSubPath = crv.SubPaths.Count
 End Function
 
 Private Sub EnsureOutline(ByVal s As Shape)
@@ -530,29 +553,6 @@ Private Sub UserForm_Terminate()
 NotifyFailed:
     MsgBox "Gagal memberitahu Macro Runner bahwa form sudah ditutup (" & CStr(Err.Number) & "): " & _
         Err.Description, vbExclamation, "Macro Runner"
-End Sub
-
-Private Sub ReverseSubPathOrderForBreakApart(ByVal s As Shape)
-
-    Dim sourceCurve As Curve
-    Dim rebuiltCurve As Curve
-    Dim subCurve As Curve
-    Dim i As Long
-    Dim subpathCount As Long
-
-    If s.Type <> cdrCurveShape Then Exit Sub
-    subpathCount = s.Curve.SubPaths.Count
-    If subpathCount <= 1 Then Exit Sub
-
-    Set sourceCurve = s.Curve.GetCopy
-    Set rebuiltCurve = CreateCurve(ActiveDocument)
-    For i = subpathCount To 1 Step -1
-        Set subCurve = sourceCurve.SubPaths(i).GetCopy
-        rebuiltCurve.AppendCurve subCurve
-    Next i
-
-    s.Curve.CopyAssign rebuiltCurve
-
 End Sub
 
 Private Sub AppendBoundary( _
